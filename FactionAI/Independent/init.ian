@@ -1,0 +1,383 @@
+//Faction AI
+aph_fnc_AILogicStart={
+//independent
+Independent_Military_HQ=createAgent ["LocationBase_F",[0,0,0], [], 0, "NONE"];
+	Independent_Military_HQ setvariable ["WantedLocations",[AirStationFlag,AgiaMariaEastFlag,AgiaMariaWestFlag]];
+	Independent_Military_HQ setvariable ["OwnedLocations",[EastLighthouseFlag,KaminoFlag,WestTransmitterFlag,CampRogainFlag,KillFarmFlag,NorthPeakFlag,IndependentAssaultFlag]];
+	Independent_Military_HQ setvariable ["AssaultCamps",
+		[
+		[[3804.74,6367.31,0.00118256],[],false],
+		[[3466.12,6736.35,0.00196457],[],false]
+		]
+	];
+	
+	
+Blufor_Military_HQ=createAgent ["LocationBase_F",[0,0,0], [], 0, "NONE"];
+		Blufor_Military_HQ setvariable ["OwnedLocations",[AgiaMariaEastFlag,AgiaMariaWestFlag]];
+
+Opfor_Military_HQ=createAgent ["LocationBase_F",[0,0,0], [], 0, "NONE"];
+Civilian_Military_HQ=createAgent ["LocationBase_F",[0,0,0], [], 0, "NONE"];
+
+
+};
+
+aph_fnc_FlagReinforcements={
+_Town=_this;
+_LocalTribute=_town getvariable ["LocalMilitia","none"];
+_side=_town getvariable ["TownFaction",civilian];
+_time=time;
+	while {true} do {
+	_rate=_town getvariable ["TroopTributeRate",5];
+		waitUntil {time>=_time};
+		
+		//Create troop and send to local base.
+		_group=creategroup _side;
+		_unit = _group createUnit ["C_man_w_worker_F", getpos _Town, [], 0, "NONE"];
+		[_unit] join _group;
+		_unit setvariable ["HeadingToTown",_LocalTribute];
+		_wp1=_group addwaypoint [getpos _LocalTribute,0];
+		_wp1 setWaypointSpeed "LIMITED";
+		_wp1 setWaypointType "MOVE";
+		_wp1 setWaypointBehaviour "SAFE";
+		_wp1 setWaypointStatements ["true","this spawn aph_fnc_AIJoinMilitia"];
+		
+		_time=_time + (300/_rate);
+	};
+
+
+
+};
+
+//Town Militias
+aph_fnc_AIJoinMilitia={
+_unit=_this;
+_side=side _unit;
+_Town=_unit getvariable "HeadingToTown";
+_maxCapacity=_town getvariable ["MaximumMilitia",8];
+_militia=_town getvariable ["StationedUnits",[]];
+_SendingCount=_town getvariable ["SendingMilitiaSize",4];
+//end Variables
+
+//Set AI for unit
+_AI=nil;
+	switch (_side) do 
+		{
+			case resistance: {_AI=Independent_Military_HQ;};
+			case blufor: {_AI=Blufor_Military_HQ};
+			case opfor: {_AI=Opfor_Military_HQ};
+		};
+
+//Get AI variables
+_AssaultCampsArray=_AI getvariable "AssaultCamps";
+	_ACLocations=[];
+	_ACUnits=[];
+	{
+		_ACLocations pushback (_x select 0);
+		_ACUnits pushback (_x select 1);
+	}foreach _AssaultCampsArray;
+
+
+
+//Unit join local militia, if guard militia is at capacity then send to assault camp	
+_unit spawn aph_fnc_TrainForMilitia;
+_unit spawn aph_fnc_PatrolMilitiaTown;
+_militia pushback _unit;
+
+	//Create debug marker
+	if ( ((getmarkerpos (format ["MiltiaMarker_%1",_town])) distance [0,0,0]) == 0 ) then 
+		{
+			
+			_marker= createMarker [format ["MiltiaMarker_%1",_town], getpos _town];
+			_marker setMarkerShape "ICON";
+			_marker setMarkerType "hd_dot";
+			_marker setMarkerColor "ColorOrange";
+			_text=format ["Militia: %1", count _militia];
+			_txt=format ["%1",_text];
+			_marker setMarkerText _txt;	
+			
+			
+			
+		} else 
+			{
+			
+				deletemarker format ["MiltiaMarker_%1",_town];
+				_marker= createMarker [format ["MiltiaMarker_%1",_town], getpos _town];
+				_marker setMarkerShape "ICON";
+				_marker setMarkerType "hd_dot";
+				_marker setMarkerColor "ColorOrange";
+				_text=format ["Militia: %1", count _militia];
+				_txt=format ["%1",_text];
+				_marker setMarkerText _txt;
+				
+			};
+
+			//check if militia is at capacity
+				if (count _militia >=_maxCapacity ) then 
+				{
+					//group 4 units together
+					_group=creategroup (side _unit);
+						for "_i" from 1 to _SendingCount do 
+						{
+							_sel=_militia call BIS_fnc_selectRandom;		
+							_militia deleteAt (_militia find _sel);
+							[_sel] join _group;
+							_sel setvariable ["HasOrders",true];
+						};
+					
+					//select Assault camp
+					_location=[0,0,2000];
+					{
+						_test=_x;
+						if (_town distance _location >= _town distance _test ) then 	
+							{
+								_location=_test;
+							};
+					
+					}foreach _ACLocations;
+					
+					//Set new group unit's variable for new location
+						{
+							_x setvariable ["HeadingToLocation",_location];
+						}foreach units _group;
+					
+					//Set new waypoint
+					_wp1=_group addwaypoint [_location,0];
+					_wp1 setWaypointType "MOVE";
+					_wp1 setWaypointSpeed "NORMAL";
+					_wp1 setWaypointFormation "VEE";
+					_wp1 setWaypointBehaviour "AWARE";
+					_wp1 setWaypointStatements ["true","thislist spawn aph_fnc_AssaultConsiderAttack"];
+				};
+	
+
+
+	
+_town setvariable ["StationedUnits",_militia];
+};
+
+aph_fnc_TrainForMilitia={
+_unit=_this;
+
+_unit addmagazine "20Rnd_762x51_Mag";  
+_unit addmagazine "20Rnd_762x51_Mag"; 
+_unit addweapon "srifle_DMR_06_olive_F";
+
+//add eventhandler
+	_unit addeventhandler ["Killed", {
+		
+		_unit=_this select 0;
+		_killer=_this select 1;
+		_Town=_unit getvariable "HeadingToTown";
+		_militia=_town getvariable ["StationedUnits",[]];
+		
+		_militia deleteAt (_militia find _unit);
+		
+		//debug
+		deletemarker format ["MiltiaMarker_%1",_town];
+				_marker= createMarker [format ["MiltiaMarker_%1",_town], getpos _town];
+				_marker setMarkerShape "ICON";
+				_marker setMarkerType "hd_dot";
+				_marker setMarkerColor "ColorOrange";
+				_text=format ["Militia: %1", count _militia];
+				_txt=format ["%1",_text];
+				_marker setMarkerText _txt;
+
+	}];
+
+};
+
+aph_fnc_PatrolMilitiaTown={
+_unit=_this;
+_Town=_unit getvariable "HeadingToTown";
+
+while {!(_unit getvariable ["HasOrders",false])} do 
+	{
+	
+	
+	
+	};
+
+
+
+
+};
+
+//AI Assault Camps
+aph_fnc_AssaultConsiderAttack={
+_units=_this;
+_pos=(_units select 0) getvariable "HeadingToLocation";
+
+//Set AI for unit
+_AI="";
+	switch (side (_units select 0)) do 
+		{
+			case resistance: {_AI=Independent_Military_HQ};
+			case blufor: {_AI=Blufor_Military_HQ};
+			case opfor: {_AI=Opfor_Military_HQ};
+		};
+
+//Get AI variables
+_AssaultCampsArray=_AI getvariable "AssaultCamps";
+	_ACLocations=[];
+	_ACUnits=[];
+	{
+		_ACLocations pushback (_x select 0);
+		_ACUnits pushback (_x select 1);
+	}foreach _AssaultCampsArray;
+
+_LocationUnits=(_ACUnits select (_ACLocations find _pos));
+	
+//make base if necassary
+	if !((_AssaultCampsArray select (_ACLocations find _pos)) select 2) then {
+	
+	//Build Base	
+	_Bunker=createVehicle ["Land_Cargo_House_V1_F",_pos, [], 5, "NONE"];
+	
+	
+		(_AssaultCampsArray select (_ACLocations find _pos)) set [2,true];
+
+	};
+
+
+//Add units to Location Army unit array
+{_LocationUnits pushback _x}foreach _units;	
+
+/*
+//add eventhandler
+	{
+		_x addeventhandler ["Killed", {
+			
+			_unit=_this select 0;
+			_killer=_this select 1;
+			_Town=_unit getvariable "HeadingToLocation";
+			_militia=_town getvariable ["StationedUnits",[]];
+			
+			_militia deleteAt (_militia find _unit);
+			
+			//debug
+			deletemarker format ["MiltiaMarker_%1",_town];
+					_marker= createMarker [format ["MiltiaMarker_%1",_town], getpos _town];
+					_marker setMarkerShape "ICON";
+					_marker setMarkerType "hd_dot";
+					_marker setMarkerColor "ColorOrange";
+					_text=format ["Militia: %1", count _militia];
+					_txt=format ["%1",_text];
+					_marker setMarkerText _txt;
+
+		}];
+	}foreach _units;
+*/
+	//Create debug marker
+	if ( ((getmarkerpos (format ["AssaultCampMarker_%1",_pos])) distance [0,0,0]) == 0 ) then 
+		{
+			
+			_marker= createMarker [format ["AssaultCampMarker_%1",_pos],_pos];
+			_marker setMarkerShape "ICON";
+			_marker setMarkerType "hd_dot";
+			_marker setMarkerColor "ColorOrange";
+			_text=format ["Camp: %1", count _LocationUnits];
+			_txt=format ["%1",_text];
+			_marker setMarkerText _txt;	
+			
+			
+			
+		} else 
+			{
+			
+				deletemarker format ["AssaultCampMarker_%1",_pos];
+				_marker= createMarker [format ["AssaultCampMarker_%1",_pos],_pos];
+				_marker setMarkerShape "ICON";
+				_marker setMarkerType "hd_dot";
+				_marker setMarkerColor "ColorOrange";
+				_text=format ["Camp: %1", count _LocationUnits];
+				_txt=format ["%1",_text];
+				_marker setMarkerText _txt;
+				
+			};	
+
+
+//If there are enough units ready then choose attack location
+	if ((count _LocationUnits)>=12) then 
+		{
+		
+		
+		_Locations=_AI getvariable "WantedLocations";
+		_AttackLocation=[0,0,1000];
+		//get closest attack location
+			{
+			_test=_x;
+				if ((_LocationUnits select 0) distance _AttackLocation>=(_LocationUnits select 0) distance _test) then 
+					{
+						_AttackLocation=_test;
+					};
+			}foreach _Locations;
+		
+		//Attack wanted location foreach each group ready at location
+			{
+				if !((leader group _x)==_x) then 
+				{}
+					else 
+					{
+						_wp1=(group _x) addwaypoint [getpos _AttackLocation,0];
+						_wp1 setWaypointType "SAD";
+						_wp1 setWaypointSpeed "NORMAL";
+						_wp1 setWaypointFormation "VEE";
+						_wp1 setWaypointBehaviour "AWARE";
+					};
+			}foreach _LocationUnits;
+			
+		_LocationUnits resize 0;		
+		};
+
+};
+
+
+//Flags
+aph_fnc_CaptureTownFlag={
+_target=_this select 0;
+_caller=_this select 1;
+_ID=_this select 2;
+_arg=_this select 3;
+
+
+_Owner=_target getvariable "CurrentOwner";
+
+//Set Proper AI to lose Town
+_AI="";
+	switch (_Owner) do 
+		{
+			case "Blufor": {_AI=Blufor_Military_HQ};
+			case "Opfor": {_AI=Opfor_Military_HQ};
+			case "Independent": {_AI=Independent_Military_HQ};
+			case "Civilian": {_AI=Civilian_Military_HQ};
+		};
+_array=_AI getvariable ["OwnedLocations",[]];
+_array deleteAt (_array find _target);
+
+
+//Add town to winning AI and assign texture
+_AI2="";
+_Texture="";
+switch ( str (Side _caller)) do 
+	{
+		case "WEST":{_texture="\A3\Data_F\Flags\Flag_nato_CO.paa";_AI2=Blufor_Military_HQ};
+		case "EAST": {_texture="\A3\Data_F\Flags\Flag_CSAT_CO.paa";_AI2=Opfor_Military_HQ};
+		case "GUER": {_texture="\A3\Data_F\Flags\Flag_FIA_CO.paa";_AI2=Independent_Military_HQ};
+		case "CIV": {_texture="\A3\Data_F\Flags\Flag_red_CO.paa";_AI2=Civilian_Military_HQ}; 
+	};
+
+_AIArray=_AI2 getvariable ["OwnedLocations",[]];
+_AIArray pushback _target;
+	
+	hint format ["%1",count _AIArray];
+	
+//Set flag texture	
+_target setflagtexture _Texture;
+
+
+
+};
+
+
+
+[] spawn aph_fnc_AILogicStart;
