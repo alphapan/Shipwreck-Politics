@@ -1,0 +1,21 @@
+class Sentences
+{
+
+	class OpenText
+	{
+		text = "%Variable" ;
+		speech[] = {};
+		class Arguments 
+		{
+			class Variable {type = "simple";};
+			
+		};
+		
+	};
+
+	
+};
+class Arguments{};
+class Special{};
+startWithVocal[] = {hour};
+startWithConsonant[] = {europe, university};

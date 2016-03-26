@@ -1,0 +1,11 @@
+this addaction ["Greet Civilian","Convo\StartConversation.sqf"];
+
+//replace "IC_start" with desired intro selection
+
+nul = this spawn { sleep 3; _this setVariable ["ConversationOptions",[(aph_dialogNodes select
+ (aph_dialogNodes_ID find 
+
+"IC_Start"
+
+))],
+ true]; }; 
